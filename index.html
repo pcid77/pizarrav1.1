@@ -27,8 +27,15 @@
           <button data-tool="timeline">Línea de tiempo</button>
           <button id="connectMode">Conectar</button>
         </div>
-      </section>
+        <div class="sync-cloud drive-sync">
+          <input id="driveWebhook" type="url" placeholder="URL Web App (Apps Script)" />
+          <div class="tools">
+            <button id="saveDrive">Guardar en Drive</button>
+            <button id="loadDrive">Cargar de Drive</button>
+          </div>
+        </div>
 
+      </section>
 
       
 
@@ -47,7 +54,10 @@
         <div class="tools">
           <button id="openJsonImport">Importar JSON/TSV</button>
           <button id="exportJson">Exportar JSON</button>
+          <button id="saveFile">Guardar archivo</button>
+          <button id="loadFile">Cargar archivo</button>
         </div>
+        <input id="loadFileInput" type="file" accept="application/json,.json" hidden />
       </section>
 
     </aside>
@@ -88,8 +98,6 @@
         </menu>
       </form>
     </dialog>
-
-
 
     <dialog id="jsonDialog">
       <form id="jsonForm" method="dialog">

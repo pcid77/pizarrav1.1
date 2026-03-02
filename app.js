@@ -1,4 +1,4 @@
-const STORAGE_KEY = "infinite-board-v3";
+const STORAGE_KEY = "infinite-board-v4";
 
 const state = {
   boards: {},
@@ -24,6 +24,13 @@ const els = {
   addEventRow: document.getElementById("addEventRow"),
   addPeriodRow: document.getElementById("addPeriodRow"),
   cancelTimeline: document.getElementById("cancelTimeline"),
+  openJsonImport: document.getElementById("openJsonImport"),
+  exportJson: document.getElementById("exportJson"),
+  jsonDialog: document.getElementById("jsonDialog"),
+  jsonForm: document.getElementById("jsonForm"),
+  jsonInput: document.getElementById("jsonInput"),
+  jsonMessage: document.getElementById("jsonMessage"),
+  cancelJson: document.getElementById("cancelJson"),
 };
 
 init();
@@ -50,6 +57,19 @@ function bindUI() {
     state.connectFrom = null;
     els.connectMode.classList.toggle("active", state.connectMode);
     renderBoard();
+  });
+
+  els.openJsonImport.addEventListener("click", () => {
+    els.jsonInput.value = "";
+    els.jsonMessage.textContent = "";
+    els.jsonDialog.showModal();
+  });
+
+  els.exportJson.addEventListener("click", exportCurrentBoardJson);
+  els.cancelJson.addEventListener("click", () => els.jsonDialog.close("cancel"));
+  els.jsonForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    importJson(els.jsonInput.value);
   });
 
   els.addEventRow.addEventListener("click", () => addTimelineRow("event"));
@@ -89,6 +109,66 @@ function bindUI() {
   });
 }
 
+function importJson(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+
+    if (Array.isArray(parsed)) {
+      applyImportedBoard({ name: "Importado JSON", nodes: parsed, connections: [] });
+    } else if (parsed.nodes) {
+      applyImportedBoard(parsed);
+    } else {
+      throw new Error("Formato no soportado. Usa {name,nodes,connections} o un array de nodos.");
+    }
+
+    els.jsonMessage.textContent = "Importación correcta.";
+    els.jsonDialog.close("save");
+    renderBoards();
+    renderBoard();
+    save();
+  } catch (err) {
+    els.jsonMessage.textContent = `Error: ${err.message}`;
+  }
+}
+
+function applyImportedBoard(boardData) {
+  const id = crypto.randomUUID();
+  const nodes = (boardData.nodes || []).map((n, i) => ({
+    id: n.id || crypto.randomUUID(),
+    type: n.type || "note",
+    x: Number.isFinite(n.x) ? n.x : 120 + i * 25,
+    y: Number.isFinite(n.y) ? n.y : 100 + i * 25,
+    width: Number.isFinite(n.width) ? n.width : 300,
+    height: Number.isFinite(n.height) ? n.height : n.type === "timeline" ? 220 : 190,
+    title: n.title || { note: "Nota", image: "Imagen", video: "Video", timeline: "Línea de tiempo" }[n.type || "note"],
+    data: n.data || {},
+  }));
+
+  const validIds = new Set(nodes.map((n) => n.id));
+  const connections = (boardData.connections || [])
+    .filter((c) => validIds.has(c.from) && validIds.has(c.to))
+    .map((c) => ({ id: c.id || crypto.randomUUID(), from: c.from, to: c.to }));
+
+  state.boards[id] = {
+    id,
+    name: boardData.name || `Importado ${new Date().toLocaleTimeString()}`,
+    nodes,
+    connections,
+  };
+  state.activeBoardId = id;
+}
+
+function exportCurrentBoardJson() {
+  const board = activeBoard();
+  if (!board) return;
+  const payload = JSON.stringify({ name: board.name, nodes: board.nodes, connections: board.connections }, null, 2);
+  navigator.clipboard.writeText(payload).then(() => {
+    alert("JSON copiado al portapapeles.");
+  }).catch(() => {
+    prompt("Copia este JSON:", payload);
+  });
+}
+
 async function addNode(type) {
   const board = activeBoard();
   if (!board) return;
@@ -98,30 +178,19 @@ async function addNode(type) {
     type,
     x: 140 + board.nodes.length * 20,
     y: 120 + board.nodes.length * 20,
-    width: 300,
-    height: type === "timeline" ? 220 : 190,
+    width: 320,
+    height: type === "timeline" ? 240 : 200,
     title: { note: "Nota", image: "Imagen", video: "Video", timeline: "Línea de tiempo" }[type],
     data: {},
   };
 
   if (type === "note") base.data.text = prompt("Escribe tu nota:", "Idea principal") || "";
-  if (type === "image") {
-    base.data.url =
-      prompt("URL de imagen:", "https://images.unsplash.com/photo-1509099836639-18ba1795216d?w=800") || "";
-  }
-  if (type === "video") {
-    base.data.url = prompt("URL de YouTube o Vimeo:", "https://www.youtube.com/watch?v=dQw4w9WgXcQ") || "";
-  }
+  if (type === "image") base.data.url = prompt("URL de imagen:", "https://images.unsplash.com/photo-1509099836639-18ba1795216d?w=800") || "";
+  if (type === "video") base.data.url = prompt("URL de YouTube o Vimeo:", "https://www.youtube.com/watch?v=dQw4w9WgXcQ") || "";
   if (type === "timeline") {
     const items = await openTimelineDialog();
     if (items === null) return;
-    base.data.items = items.length
-      ? items
-      : [
-          { kind: "event", label: "Inicio", date: "2026-01-10" },
-          { kind: "period", label: "Implementación", start: "2026-01-15", end: "2026-02-20" },
-          { kind: "event", label: "Entrega", date: "2026-03-01" },
-        ];
+    base.data.items = items.length ? items : [{ kind: "event", label: "Inicio", date: "2026-01-10" }];
   }
 
   board.nodes.push(base);
@@ -142,17 +211,14 @@ function openTimelineDialog() {
       els.timelineDialog.close("save");
       resolve(items);
     };
-
     const onClose = () => {
       if (els.timelineDialog.returnValue !== "save") resolve(null);
       cleanup();
     };
-
     const cleanup = () => {
       els.timelineForm.removeEventListener("submit", onSubmit);
       els.timelineDialog.removeEventListener("close", onClose);
     };
-
     els.timelineForm.addEventListener("submit", onSubmit);
     els.timelineDialog.addEventListener("close", onClose);
     els.timelineDialog.showModal();
@@ -162,77 +228,40 @@ function openTimelineDialog() {
 function addTimelineRow(type) {
   const row = document.createElement("div");
   row.className = "timeline-row";
-
-  if (type === "event") {
-    row.innerHTML = `
-      <span class="badge">Evento</span>
-      <input data-field="label" placeholder="Nombre" value="Nuevo evento" />
-      <input data-field="date" type="date" />
-      <button type="button" class="remove-row">✕</button>
-    `;
-  } else {
-    row.innerHTML = `
-      <span class="badge">Periodo</span>
-      <input data-field="label" placeholder="Nombre" value="Nuevo periodo" />
-      <input data-field="start" type="date" />
-      <input data-field="end" type="date" />
-      <button type="button" class="remove-row">✕</button>
-    `;
-  }
-
   row.dataset.type = type;
+  row.innerHTML = type === "event"
+    ? `<span class="badge">Evento</span><input data-field="label" value="Nuevo evento" /><input data-field="date" type="date" /><button type="button" class="remove-row">✕</button>`
+    : `<span class="badge">Periodo</span><input data-field="label" value="Nuevo periodo" /><input data-field="start" type="date" /><input data-field="end" type="date" /><button type="button" class="remove-row">✕</button>`;
   row.querySelector(".remove-row").addEventListener("click", () => row.remove());
   els.timelineRows.append(row);
 }
 
 function collectTimelineRows() {
-  const rows = [...els.timelineRows.querySelectorAll(".timeline-row")];
-  return rows
-    .map((row) => {
-      const type = row.dataset.type;
-      const fields = Object.fromEntries(
-        [...row.querySelectorAll("input")].map((i) => [i.dataset.field, i.value.trim()])
-      );
-
-      if (type === "event" && fields.label && fields.date) {
-        return { kind: "event", label: fields.label, date: fields.date };
-      }
-      if (type === "period" && fields.label && fields.start && fields.end) {
-        return { kind: "period", label: fields.label, start: fields.start, end: fields.end };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  return [...els.timelineRows.querySelectorAll(".timeline-row")].map((row) => {
+    const f = Object.fromEntries([...row.querySelectorAll("input")].map((i) => [i.dataset.field, i.value.trim()]));
+    if (row.dataset.type === "event" && f.label && f.date) return { kind: "event", label: f.label, date: f.date };
+    if (row.dataset.type === "period" && f.label && f.start && f.end) return { kind: "period", label: f.label, start: f.start, end: f.end };
+    return null;
+  }).filter(Boolean);
 }
 
 function renderBoards() {
   els.boardList.innerHTML = "";
-
   Object.values(state.boards).forEach((board) => {
     const li = document.createElement("li");
     if (board.id === state.activeBoardId) li.classList.add("active");
-
     const name = document.createElement("span");
     name.textContent = board.name;
     name.className = "name";
-    name.onclick = () => {
-      state.activeBoardId = board.id;
-      save();
-      renderBoards();
-      renderBoard();
-    };
-
+    name.onclick = () => { state.activeBoardId = board.id; save(); renderBoards(); renderBoard(); };
     const remove = document.createElement("button");
     remove.textContent = "🗑";
     remove.onclick = () => {
       if (Object.keys(state.boards).length === 1) return;
       delete state.boards[board.id];
       if (state.activeBoardId === board.id) state.activeBoardId = Object.keys(state.boards)[0];
-      save();
-      renderBoards();
-      renderBoard();
+      save(); renderBoards(); renderBoard();
     };
-
     li.append(name, remove);
     els.boardList.append(li);
   });
@@ -241,7 +270,6 @@ function renderBoards() {
 function renderBoard() {
   const board = activeBoard();
   if (!board) return;
-
   els.canvas.innerHTML = "";
   els.connections.innerHTML = "";
 
@@ -250,10 +278,9 @@ function renderBoard() {
     el.dataset.id = node.id;
     el.style.left = `${node.x}px`;
     el.style.top = `${node.y}px`;
-    el.style.width = `${node.width || 300}px`;
-    el.style.height = `${node.height || 190}px`;
+    el.style.width = `${node.width || 320}px`;
+    el.style.height = `${node.height || 200}px`;
     el.querySelector(".title").textContent = node.title;
-
     if (state.connectFrom === node.id) el.classList.add("selected-for-connection");
 
     const content = el.querySelector(".content");
@@ -267,25 +294,17 @@ function renderBoard() {
       board.nodes = board.nodes.filter((n) => n.id !== node.id);
       board.connections = board.connections.filter((c) => c.from !== node.id && c.to !== node.id);
       if (state.connectFrom === node.id) state.connectFrom = null;
-      save();
-      renderBoard();
+      save(); renderBoard();
     });
 
-    const resize = el.querySelector(".resize-handle");
-    resize.addEventListener("mousedown", (ev) => {
-      ev.stopPropagation();
-      resizeNode(ev, node);
-    });
+    el.querySelector(".resize-handle").addEventListener("mousedown", (ev) => { ev.stopPropagation(); resizeNode(ev, node); });
 
     let moved = false;
     el.addEventListener("mousedown", (ev) => {
       if (ev.button !== 0 || ev.target.closest(".resize-handle")) return;
       moved = false;
-      dragNode(ev, node, () => {
-        moved = true;
-      });
+      dragNode(ev, node, () => { moved = true; });
     });
-
     el.addEventListener("click", (ev) => {
       ev.stopPropagation();
       if (!state.connectMode || moved) return;
@@ -302,25 +321,10 @@ function renderBoard() {
 function connectNode(targetId) {
   const board = activeBoard();
   if (!board) return;
-
-  if (!state.connectFrom) {
-    state.connectFrom = targetId;
-    renderBoard();
-    return;
-  }
-
-  if (state.connectFrom === targetId) {
-    state.connectFrom = null;
-    renderBoard();
-    return;
-  }
-
-  const exists = board.connections.some(
-    (c) => (c.from === state.connectFrom && c.to === targetId) || (c.from === targetId && c.to === state.connectFrom)
-  );
-
+  if (!state.connectFrom) { state.connectFrom = targetId; renderBoard(); return; }
+  if (state.connectFrom === targetId) { state.connectFrom = null; renderBoard(); return; }
+  const exists = board.connections.some((c) => (c.from === state.connectFrom && c.to === targetId) || (c.from === targetId && c.to === state.connectFrom));
   if (!exists) board.connections.push({ id: crypto.randomUUID(), from: state.connectFrom, to: targetId });
-
   state.connectFrom = null;
   save();
   renderBoard();
@@ -329,30 +333,20 @@ function connectNode(targetId) {
 function timeline(items) {
   const wrap = document.createElement("div");
   wrap.className = "timeline-wrap";
-  if (!items.length) {
-    wrap.textContent = "Sin eventos todavía.";
-    return wrap;
-  }
+  if (!items.length) { wrap.textContent = "Sin eventos todavía."; return wrap; }
 
-  const parsed = items
-    .map((item) => {
-      const start = item.kind === "event" ? parseDate(item.date) : parseDate(item.start);
-      const end = item.kind === "period" ? parseDate(item.end) : start;
-      if (!start || !end) return null;
-      return { ...item, _start: start, _end: end };
-    })
-    .filter(Boolean)
-    .sort((a, b) => a._start - b._start);
+  const parsed = items.map((item) => {
+    const start = item.kind === "event" ? parseDate(item.date) : parseDate(item.start);
+    const end = item.kind === "period" ? parseDate(item.end) : start;
+    if (!start || !end) return null;
+    return { ...item, _start: start, _end: end };
+  }).filter(Boolean).sort((a,b)=>a._start-b._start);
 
-  if (!parsed.length) {
-    wrap.textContent = "Fechas inválidas en la línea de tiempo.";
-    return wrap;
-  }
+  if (!parsed.length) { wrap.textContent = "Fechas inválidas en la línea de tiempo."; return wrap; }
 
   const min = Math.min(...parsed.map((p) => p._start));
   const max = Math.max(...parsed.map((p) => p._end));
   const range = Math.max(max - min, 1);
-
   const track = document.createElement("div");
   track.className = "timeline-track";
 
@@ -364,14 +358,13 @@ function timeline(items) {
       period.style.width = `${Math.max(4, ((item._end - item._start) / range) * 100)}%`;
       period.innerHTML = `<span>${item.label} (${item.start} → ${item.end})</span>`;
       track.append(period);
-      return;
+    } else {
+      const mark = document.createElement("div");
+      mark.className = "timeline-event";
+      mark.style.left = `${((item._start - min) / range) * 100}%`;
+      mark.innerHTML = `<strong>${item.label}</strong><small>${item.date}</small>`;
+      track.append(mark);
     }
-
-    const mark = document.createElement("div");
-    mark.className = "timeline-event";
-    mark.style.left = `${((item._start - min) / range) * 100}%`;
-    mark.innerHTML = `<strong>${item.label}</strong><small>${item.date}</small>`;
-    track.append(mark);
   });
 
   wrap.append(track);
@@ -399,32 +392,26 @@ function videoEmbed(url = "") {
 function dragNode(ev, node, onMoveDetected) {
   ev.preventDefault();
   const start = { mouseX: ev.clientX, mouseY: ev.clientY, nodeX: node.x, nodeY: node.y };
-
   function onMove(e) {
     const dx = (e.clientX - start.mouseX) / state.viewport.scale;
     const dy = (e.clientY - start.mouseY) / state.viewport.scale;
-
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) onMoveDetected();
-
     node.x = start.nodeX + dx;
     node.y = start.nodeY + dy;
     renderBoard();
   }
-
   function onUp() {
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
     save();
   }
-
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
 }
 
 function resizeNode(ev, node) {
   ev.preventDefault();
-  const start = { mouseX: ev.clientX, mouseY: ev.clientY, width: node.width || 300, height: node.height || 190 };
-
+  const start = { mouseX: ev.clientX, mouseY: ev.clientY, width: node.width || 320, height: node.height || 200 };
   function onMove(e) {
     const dx = (e.clientX - start.mouseX) / state.viewport.scale;
     const dy = (e.clientY - start.mouseY) / state.viewport.scale;
@@ -432,13 +419,11 @@ function resizeNode(ev, node) {
     node.height = Math.max(130, start.height + dy);
     renderBoard();
   }
-
   function onUp() {
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
     save();
   }
-
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
 }
@@ -448,10 +433,10 @@ function drawConnection(conn, board) {
   const to = board.nodes.find((n) => n.id === conn.to);
   if (!from || !to) return;
 
-  const x1 = from.x + (from.width || 300) / 2;
-  const y1 = from.y + (from.height || 190) / 2;
-  const x2 = to.x + (to.width || 300) / 2;
-  const y2 = to.y + (to.height || 190) / 2;
+  const x1 = from.x + (from.width || 320) / 2;
+  const y1 = from.y + (from.height || 200) / 2;
+  const x2 = to.x + (to.width || 320) / 2;
+  const y2 = to.y + (to.height || 200) / 2;
 
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   line.setAttribute("class", "connection-line");
@@ -491,8 +476,5 @@ function load() {
 }
 
 function save() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ boards: state.boards, activeBoardId: state.activeBoardId, viewport: state.viewport })
-  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ boards: state.boards, activeBoardId: state.activeBoardId, viewport: state.viewport }));
 }

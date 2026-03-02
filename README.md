@@ -1,4 +1,4 @@
-# Pizarra Infinita (Estilo Sci‑Fi)
+# Pizarra Infinita (Interfaz Sci‑Fi)
 
 Aplicación web para organizar proyectos en pizarras separadas, con nodos visuales conectables sobre un lienzo infinito.
 
@@ -6,11 +6,12 @@ Aplicación web para organizar proyectos en pizarras separadas, con nodos visual
 
 - Pizarras múltiples (una por proyecto).
 - Elementos: nota, imagen, video/enlace y línea de tiempo.
-- Línea de tiempo con **formulario** para añadir múltiples:
-  - eventos (`nombre + fecha`)
-  - periodos (`nombre + fecha inicio + fecha fin`)
-- Redimensionado manual de nodos (notas, eventos, timelines, etc.) desde la esquina inferior derecha.
+- Línea de tiempo con formulario para múltiples eventos/periodos con fecha.
+- Redimensionado manual de todos los nodos.
 - Conexiones rectas entre nodos (modo **Conectar**).
+- Importación y exportación de datos por JSON:
+  - **Importar JSON**: pega `{ name, nodes, connections }` o un array de nodos.
+  - **Exportar JSON**: copia al portapapeles la pizarra activa.
 - Pan (`Shift + arrastrar`) y zoom (rueda).
 - Persistencia en `localStorage`.
 
